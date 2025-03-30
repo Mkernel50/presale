@@ -940,6 +940,47 @@ export default function Home() {
     }
   };
 
+  const [suiWalletAddress, setSuiWalletAddress] = useState("");
+
+  // Add the handler for SUI wallet submission
+  const handleSuiWalletSubmit = async () => {
+    if (!connected || !walletAddress) {
+      showToast({ 
+        message: "Please connect your wallet first",
+        type: "error"
+      });
+      return;
+    }
+
+    if (!suiWalletAddress) {
+      showToast({ 
+        message: "Please enter your SUI wallet address",
+        type: "error"
+      });
+      return;
+    }
+
+    try {
+      const playerDoc = doc(db, 'players', userReferralCode);
+      await updateDoc(playerDoc, {
+        suiWalletAddress: suiWalletAddress,
+        lastUpdated: new Date().toISOString()
+      });
+
+      showToast({
+        message: "SUI wallet address saved successfully!",
+        type: "success"
+      });
+      setSuiWalletAddress("");
+    } catch (error) {
+      console.error("Error saving SUI wallet:", error);
+      showToast({
+        message: "Failed to save SUI wallet address",
+        type: "error"
+      });
+    }
+  };
+
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-[#1a1b3b] to-[#2a2b5b] flex items-center justify-center p-4">
@@ -1237,6 +1278,28 @@ export default function Home() {
                               when they purchase any amount of $SPIDER
                             </p>
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-6 space-y-4">
+                      <h3 className="text-xl font-semibold">Submit SUI Wallet</h3>
+                      <div className="space-y-3">
+                        <p className="text-sm opacity-80">Submit your SUI wallet address to participate in the ecosystem.</p>
+                        <div className="flex space-x-2">
+                          <Input
+                            placeholder="Enter SUI Wallet Address"
+                            value={suiWalletAddress}
+                            onChange={(e) => setSuiWalletAddress(e.target.value)}
+                            className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                          />
+                          <Button 
+                            onClick={handleSuiWalletSubmit}
+                            variant="default"
+                            className="whitespace-nowrap bg-gradient-to-r from-[#3c28a7] to-[#9f2dfd] hover:from-[#3c28a7]/80 hover:to-[#9f2dfd]/80 text-white border-none"
+                          >
+                            Submit
+                          </Button>
                         </div>
                       </div>
                     </div>
