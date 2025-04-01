@@ -78,6 +78,8 @@ interface PlayerData {
   invalidInvites: InviteData;
   spiderBalance: number;
   feedersClaimed: string[]; // Array of addresses that have claimed feeders
+  referrer?: string; // Add referrer field
+  suiWalletAddress?: string;
 }
 
 export default function Home() {
@@ -167,6 +169,7 @@ export default function Home() {
                 total: 0,
                 referrals: []
               },
+              referrer: null, // Add referrer field with null default
               createdAt: new Date().toISOString(),
               lastUpdated: new Date().toISOString()
             });
@@ -777,6 +780,13 @@ export default function Home() {
           last_updated: new Date().toISOString()
         });
       }
+  
+      // Update the current player's document to include the referrer
+      const currentPlayerDoc = doc(db, 'players', userReferralCode);
+      batch.update(currentPlayerDoc, {
+        referrer: referralCode,
+        lastUpdated: new Date().toISOString()
+      });
   
       // Commit all changes
       await batch.commit();
