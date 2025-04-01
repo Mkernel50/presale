@@ -977,6 +977,9 @@ export default function Home() {
         lastUpdated: new Date().toISOString()
       });
 
+      // Fetch updated player data
+      await fetchPlayerData();
+
       showToast({
         message: "SUI wallet address saved successfully!",
         type: "success"
@@ -990,6 +993,34 @@ export default function Home() {
       });
     }
   };
+
+  const [playerData, setPlayerData] = useState<PlayerData | null>(null);
+  
+  // Add fetchPlayerData function
+  const fetchPlayerData = async () => {
+    if (!connected || !userReferralCode) return;
+    
+    try {
+      const playerDoc = doc(db, 'players', userReferralCode);
+      const playerSnap = await getDoc(playerDoc);
+      
+      if (playerSnap.exists()) {
+        setPlayerData(playerSnap.data() as PlayerData);
+      } else {
+        setPlayerData(null);
+      }
+    } catch (error) {
+      console.error("Error fetching player data:", error);
+      setPlayerData(null);
+    }
+  };
+
+  // Add useEffect to fetch player data when connected
+  useEffect(() => {
+    if (connected && userReferralCode) {
+      fetchPlayerData();
+    }
+  }, [connected, userReferralCode]);
 
   if (error) {
     return (
@@ -1099,7 +1130,12 @@ export default function Home() {
                           <span>Loading...</span>
                         </div>
                       ) : (
-                        <p>{spiderBalance} $SPIDER</p>
+                        <div className="flex items-center gap-2">
+                          <p>{spiderBalance} $SPIDER</p>
+                          {parseFloat(spiderBalance) >= 100 && (
+                            <span className="text-green-400">✅ Eligible</span>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1296,20 +1332,36 @@ export default function Home() {
                       <h3 className="text-xl font-semibold">Submit SUI Wallet</h3>
                       <div className="space-y-3">
                         <p className="text-sm opacity-80">Submit your SUI wallet address to participate in the ecosystem.</p>
-                        <div className="flex space-x-2">
-                          <Input
-                            placeholder="Enter SUI Wallet Address"
-                            value={suiWalletAddress}
-                            onChange={(e) => setSuiWalletAddress(e.target.value)}
-                            className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
-                          />
-                          <Button 
-                            onClick={handleSuiWalletSubmit}
-                            variant="default"
-                            className="whitespace-nowrap bg-gradient-to-r from-[#3c28a7] to-[#9f2dfd] hover:from-[#3c28a7]/80 hover:to-[#9f2dfd]/80 text-white border-none"
-                          >
-                            Submit
-                          </Button>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex space-x-2">
+                            <Input
+                              placeholder="Enter SUI Wallet Address"
+                              value={suiWalletAddress}
+                              onChange={(e) => setSuiWalletAddress(e.target.value)}
+                              className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                            />
+                            <Button 
+                              onClick={handleSuiWalletSubmit}
+                              variant="default"
+                              className="whitespace-nowrap bg-gradient-to-r from-[#3c28a7] to-[#9f2dfd] hover:from-[#3c28a7]/80 hover:to-[#9f2dfd]/80 text-white border-none"
+                            >
+                              Submit
+                            </Button>
+                          </div>
+                          {connected && userReferralCode && (
+                            <div className="bg-white/10 p-2 rounded text-sm">
+                              {playerData?.suiWalletAddress ? (
+                                <div className="flex items-center justify-between">
+                                  <span>Submitted Wallet: </span>
+                                  <span className="font-mono">
+                                    {`${playerData.suiWalletAddress.slice(0, 6)}...${playerData.suiWalletAddress.slice(-4)}`}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-yellow-400">No wallet submitted yet</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
