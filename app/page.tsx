@@ -87,6 +87,10 @@ interface PlayerData {
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
     timestamp: string;
   }[];
+  pityCounter?: {
+    rare: number;   // Guaranteed rare after 90 rolls (was 50)
+    epic: number;  // Guaranteed epic after 250 rolls (was 100)
+  };
 }
 
 interface GachaResult {
@@ -164,6 +168,9 @@ export default function Home() {
   // Add new state for wins
   const [gachaWins, setGachaWins] = useState<PlayerData['gachaWins']>([]);
 
+  // Add new state for image animation
+  const [currentImageIndex, setCurrentImageIndex] = useState(1);
+
   // Monitor wallet connection status
   useEffect(() => {
     const checkConnection = async () => {
@@ -205,6 +212,7 @@ export default function Home() {
               referrer: null, // Add referrer field with null default
               gachaTries: 0, // Initialize gacha tries
               gachaWins: [], // Initialize gacha wins
+              pityCounter: { rare: 0, epic: 0 }, // Initialize pity counter
               createdAt: new Date().toISOString(),
               lastUpdated: new Date().toISOString()
             });
@@ -412,6 +420,7 @@ export default function Home() {
           invalidInvites: { total: 0, referrals: [] },
           gachaTries: 0,             // Initialize gacha tries
           gachaWins: [],             // Initialize gacha wins
+          pityCounter: { rare: 0, epic: 0 }, // Initialize pity counter
           createdAt: new Date().toISOString(),
           lastUpdated: new Date().toISOString()
         };
@@ -593,7 +602,7 @@ export default function Home() {
     }
   };
 
-  // Update the handleGachaRoll function
+  // Update the handleGachaRoll function timing
   const handleGachaRoll = async () => {
     if (!connected || !userReferralCode || gachaTries < 1) return;
     
@@ -603,80 +612,96 @@ export default function Home() {
     setShowLoadingEffects(true);
     
     try {
-      // Calculate rarity immediately but don't show result
-      const rand = Math.random() * 100;
+      const playerDoc = doc(db, 'players', userReferralCode);
       let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
       
-      if (rand < 93) rarity = 'tryAgain';
-      else if (rand < 98.99) rarity = 'common';
-      else if (rand < 99.99035) rarity = 'uncommon';
-      else if (rand < 99.99045) rarity = 'rare';
-      else rarity = 'epic';
+      await runTransaction(db, async (transaction) => {
+        const playerSnap = await transaction.get(playerDoc);
+        if (!playerSnap.exists()) throw new Error("Player document not found");
 
+        const currentData = playerSnap.data();
+        const pityCounter = currentData.pityCounter || { rare: 0, epic: 0 };
+        
+        // Increment pity counters
+        const newPityCounter = {
+          rare: pityCounter.rare + 1,
+          epic: pityCounter.epic + 1
+        };
+
+        // Check pity system first
+        if (newPityCounter.epic >= 250) {  // Changed from 100 to 250
+          rarity = 'epic';
+          newPityCounter.epic = 0;
+          newPityCounter.rare = 0;
+        } else if (newPityCounter.rare >= 90) {  // Changed from 50 to 90
+          rarity = 'rare';
+          newPityCounter.rare = 0;
+        } else {
+          // Normal gacha roll if no pity triggered
+          const rand = Math.random() * 100;
+          if (rand < 93) rarity = 'tryAgain';
+          else if (rand < 98.99) rarity = 'common';
+          else if (rand < 99.99035) rarity = 'uncommon';
+          else if (rand < 99.99045) rarity = 'rare';
+          else rarity = 'epic';
+          
+          // Reset relevant pity counter if naturally rolled
+          if (rarity === 'epic') {
+            newPityCounter.epic = 0;
+            newPityCounter.rare = 0;
+          } else if (rarity === 'rare') {
+            newPityCounter.rare = 0;
+          }
+        }
+
+        // Update player data with new pity counter and result
+        const updates: any = {
+          gachaTries: (currentData.gachaTries || 0) - 1,
+          pityCounter: newPityCounter,
+          lastUpdated: new Date().toISOString()
+        };
+
+        if (rarity !== 'tryAgain') {
+          const currentWins = currentData.gachaWins || [];
+          updates.gachaWins = [...currentWins, {
+            rarity: rarity,
+            timestamp: new Date().toISOString()
+          }];
+        }
+
+        transaction.update(playerDoc, updates);
+        setGachaTries(prev => prev - 1);
+      });
+
+      // Set current roll result
       const result: GachaResult = {
         id: `${userReferralCode}_${Date.now()}`,
         rarity,
         timestamp: new Date().toISOString()
       };
-
       setCurrentRoll(result);
 
-      // If it's a win (not tryAgain), record it
-      if (rarity !== 'tryAgain') {
-        const playerDoc = doc(db, 'players', userReferralCode);
-        await runTransaction(db, async (transaction) => {
-          const playerSnap = await transaction.get(playerDoc);
-          if (!playerSnap.exists()) throw new Error("Player document not found");
+      // Image animation loop with longer intervals
+      const showNextImage = async () => {
+        for (let i = 1; i <= 5; i++) {
+          setCurrentImageIndex(i);
+          await new Promise(resolve => setTimeout(resolve, 800)); // 800ms between each image
+        }
+      };
 
-          const currentData = playerSnap.data();
-          const currentWins = currentData.gachaWins || [];
-          
-          transaction.update(playerDoc, {
-            gachaTries: (currentData.gachaTries || 0) - 1,
-            gachaWins: [...currentWins, {
-              rarity: rarity,
-              timestamp: new Date().toISOString()
-            }],
-            lastUpdated: new Date().toISOString()
-          });
-
-          setGachaTries(prev => prev - 1);
-        });
-      } else {
-        // Handle tryAgain case - just deduct try
-        const playerDoc = doc(db, 'players', userReferralCode);
-        await runTransaction(db, async (transaction) => {
-          const playerSnap = await transaction.get(playerDoc);
-          if (!playerSnap.exists()) throw new Error("Player document not found");
-
-          const currentData = playerSnap.data();
-          
-          transaction.update(playerDoc, {
-            gachaTries: (currentData.gachaTries || 0) - 1,
-            lastUpdated: new Date().toISOString()
-          });
-
-          setGachaTries(prev => prev - 1);
-        });
+      // Run animation loop for 8 seconds
+      const startTime = Date.now();
+      while (Date.now() - startTime < 8000) {
+        await showNextImage();
       }
 
-      // Add exciting animations before reveal
-      let rotations = 0;
-      const rotationInterval = setInterval(() => {
-        rotations += 1;
-        setCardRotations(rotations);
-      }, 300);
-
-      // Wait for 3 seconds with animations
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      clearInterval(rotationInterval);
       setShowLoadingEffects(false);
 
-      // Show the final card flip
+      // Show the final result
       setIsFlipping(true);
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Keep showing the result for a moment
+      // Keep showing the result
       await new Promise(resolve => setTimeout(resolve, 2000));
       setShowCard(false);
 
@@ -701,26 +726,8 @@ export default function Home() {
         type: "error"
       });
     } finally {
-      setCardRotations(0);
+      setCurrentImageIndex(1);
       setIsRolling(false);
-    }
-  };
-
-  // Add this function to fetch gacha data
-  const fetchGachaData = async () => {
-    if (!connected || !userReferralCode) return;
-    
-    try {
-      const playerDoc = doc(db, 'players', userReferralCode);
-      const playerSnap = await getDoc(playerDoc);
-      
-      if (playerSnap.exists()) {
-        const data = playerSnap.data();
-        setGachaTries(data.gachaTries || 0);
-        setGachaWins(data.gachaWins || []);
-      }
-    } catch (error) {
-      console.error("Error fetching gacha data:", error);
     }
   };
 
@@ -765,6 +772,7 @@ export default function Home() {
         invalidInvites: { total: 0, referrals: [] },
         gachaTries: 0,
         gachaWins: [],
+        pityCounter: { rare: 0, epic: 0 },
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString()
       };
@@ -1210,6 +1218,30 @@ export default function Home() {
       fetchPlayerData();
     }
   }, [connected, userReferralCode]);
+
+  // Update fetchGachaData function to include pity counters
+  const fetchGachaData = async () => {
+    if (!connected || !userReferralCode) return;
+    
+    try {
+      const playerDoc = doc(db, 'players', userReferralCode);
+      const playerSnap = await getDoc(playerDoc);
+      
+      if (playerSnap.exists()) {
+        const data = playerSnap.data();
+        setGachaTries(data.gachaTries || 0);
+        setGachaWins(data.gachaWins || []);
+        // Initialize pity counter if doesn't exist
+        if (!data.pityCounter) {
+          await updateDoc(playerDoc, {
+            pityCounter: { rare: 0, epic: 0 }
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching gacha data:", error);
+    }
+  };
 
   if (error) {
     return (
@@ -1679,17 +1711,31 @@ export default function Home() {
                 <div className="text-center space-y-2">
                   <h3 className="text-xl">Your Gacha Tries: {gachaTries}</h3>
                   <p className="text-sm opacity-80">Get 1 try for every 5 TON spent on tokens!</p>
+                  {/* Add Pity Counter Display */}
+                  {playerData?.pityCounter && (
+                    <div className="mt-2 flex justify-center gap-4">
+                      <div className="bg-white/10 px-4 py-2 rounded-lg">
+                        <p className="text-sm text-blue-400">Rare Pity</p>
+                        <p className="font-bold">{90 - (playerData.pityCounter.rare || 0)}</p>
+                        <p className="text-xs opacity-60">rolls until guaranteed</p>
+                      </div>
+                      <div className="bg-white/10 px-4 py-2 rounded-lg">
+                        <p className="text-sm text-purple-400">Epic Pity</p>
+                        <p className="font-bold">{250 - (playerData.pityCounter.epic || 0)}</p>
+                        <p className="text-xs opacity-60">rolls until guaranteed</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="relative min-h-[300px] flex items-center justify-center">
                   <AnimatePresence>
                     {showCard && (
                       <motion.div
-                        initial={{ opacity: 0, scale: 0.8, rotateY: 0 }}
+                        initial={{ opacity: 0, scale: 0.8 }}
                         animate={{
                           opacity: 1,
                           scale: showLoadingEffects ? [1, 1.1, 1] : 1,
-                          rotateY: isFlipping ? 180 : cardRotations * 360,
                           y: showLoadingEffects ? [0, -10, 0] : 0
                         }}
                         exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.5 } }}
@@ -1705,58 +1751,42 @@ export default function Home() {
                             duration: 1
                           }
                         }}
-                        style={{
-                          width: "200px",
-                          height: "300px",
-                          position: "relative",
-                          transformStyle: "preserve-3d"
-                        }}
+                        className="relative w-[240px] h-[240px]" // Updated dimensions to match logo size
                       >
-                        {/* Card Front */}
-                        <motion.div
-                          className="absolute inset-0 backface-hidden bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl shadow-xl flex items-center justify-center overflow-hidden"
-                          style={{ rotateY: 0 }}
-                        >
-                          <motion.div
-                            animate={{
-                              rotate: showLoadingEffects ? 360 : 0,
-                              scale: showLoadingEffects ? [1, 1.2, 1] : 1
-                            }}
-                            transition={{
-                              rotate: { duration: 2, repeat: Infinity, ease: "linear" },
-                              scale: { duration: 1, repeat: Infinity }
-                            }}
-                          >
-                            <Spider className="w-20 h-20 text-white" />
+                        {/* Front of card - Animated Images */}
+                        {!isFlipping && (
+                          <motion.div className="absolute inset-0 rounded-xl shadow-xl overflow-hidden bg-black">
+                            <AnimatePresence mode="wait">
+                              <motion.img
+                                key={currentImageIndex}
+                                src={!isFlipping ? `/nft${currentImageIndex}.png` : 
+                                     (currentRoll?.rarity === 'tryAgain' ? '/logo.png' : `/nft${currentImageIndex}.png`)}
+                                alt="NFT Animation"
+                                className="w-full h-full object-contain"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ 
+                                  duration: 0.3, // Slower fade between images
+                                  ease: "easeInOut"
+                                }}
+                              />
+                            </AnimatePresence>
                           </motion.div>
-                          {showLoadingEffects && (
-                            <motion.div
-                              className="absolute inset-0 bg-white/10"
-                              animate={{
-                                background: [
-                                  "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 0%, transparent 50%)",
-                                  "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 100%, transparent 100%)",
-                                ],
-                              }}
-                              transition={{
-                                duration: 1,
-                                repeat: Infinity,
-                                ease: "easeInOut"
-                              }}
-                            />
-                          )}
-                        </motion.div>
+                        )}
 
-                        {/* Card Back */}
+                        {/* Back of card - Result */}
                         <motion.div
-                          className={`absolute inset-0 backface-hidden rounded-xl shadow-xl flex flex-col items-center justify-center p-4 ${
+                          className={`absolute inset-0 rounded-xl shadow-xl flex flex-col items-center justify-center p-4 ${
                             currentRoll?.rarity === 'tryAgain' ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
                             currentRoll?.rarity === 'common' ? 'bg-gradient-to-br from-gray-400 to-gray-600' :
                             currentRoll?.rarity === 'uncommon' ? 'bg-gradient-to-br from-green-400 to-green-600' :
                             currentRoll?.rarity === 'rare' ? 'bg-gradient-to-br from-blue-400 to-blue-600' :
                             'bg-gradient-to-br from-purple-400 to-purple-600'
                           }`}
-                          style={{ rotateY: 180 }}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: isFlipping ? 1 : 0 }}
+                          transition={{ duration: 0.5 }}
                         >
                           <motion.div
                             initial={{ opacity: 0, scale: 0 }}
