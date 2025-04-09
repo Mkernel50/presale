@@ -607,8 +607,8 @@ export default function Home() {
       const rand = Math.random() * 100;
       let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
       
-      if (rand < 90) rarity = 'tryAgain';
-      else if (rand < 94.99) rarity = 'common';
+      if (rand < 93) rarity = 'tryAgain';
+      else if (rand < 98.99) rarity = 'common';
       else if (rand < 99.99035) rarity = 'uncommon';
       else if (rand < 99.99045) rarity = 'rare';
       else rarity = 'epic';
