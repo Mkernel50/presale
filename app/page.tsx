@@ -613,7 +613,8 @@ export default function Home() {
     
     try {
       const playerDoc = doc(db, 'players', userReferralCode);
-      let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
+      // Initialize rarity with a default value
+      let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic' = 'tryAgain';
       
       await runTransaction(db, async (transaction) => {
         const playerSnap = await transaction.get(playerDoc);
