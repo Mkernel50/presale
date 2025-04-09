@@ -640,10 +640,10 @@ export default function Home() {
         } else {
           // Normal gacha roll if no pity triggered
           const rand = Math.random() * 100;
-          if (rand < 93) rarity = 'tryAgain';
-          else if (rand < 98.99) rarity = 'common';
-          else if (rand < 99.99035) rarity = 'uncommon';
-          else if (rand < 99.99045) rarity = 'rare';
+          if (rand < 95) rarity = 'tryAgain';
+          else if (rand < 98.999) rarity = 'common';
+          else if (rand < 99.999935) rarity = 'uncommon';
+          else if (rand < 99.999945) rarity = 'rare';
           else rarity = 'epic';
           
           // Reset relevant pity counter if naturally rolled
