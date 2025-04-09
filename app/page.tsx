@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Sliders as Spider, Trophy, Users, RefreshCw, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,8 @@ import {
   runTransaction
 } from 'firebase/firestore';
 import { Toast } from "@/components/ui/toast";
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/hooks/use-toast";
+import { InfoPopup } from "@/components/info-popup";
 
 // Create a simple toast interface for this component
 interface ToastProps {
@@ -80,10 +82,17 @@ interface PlayerData {
   feedersClaimed: string[]; // Array of addresses that have claimed feeders
   referrer?: string; // Add referrer field
   suiWalletAddress?: string;
+  gachaTries: number;
+}
+
+interface GachaResult {
+  id: string;
+  rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
+  timestamp: string;
 }
 
 export default function Home() {
-  const { toast } = useToast()
+  const { toast } = useToast();
   
   // Remove the old toast state and handlers
   // ...existing code...
@@ -94,7 +103,7 @@ export default function Home() {
       title: type.charAt(0).toUpperCase() + type.slice(1),
       description: message,
       variant: type === "error" ? "destructive" : "default",
-    })
+    });
   };
   
   // Remove removeToast as it's no longer needed
@@ -130,6 +139,23 @@ export default function Home() {
 
   const contractAddress = "EQBUMjg7ROfjh_ou3Lz1lpNrTJN59h2S-Wm-ZPsWWVzn-xc9";
   const receiverAddress = "UQAVhdnM_-BLbS6W4b1BF5UyGWuIapjXRZjNJjfve7StCqST";
+
+  // Add new state for gacha system
+  const [gachaTries, setGachaTries] = useState(0);
+  const [isRolling, setIsRolling] = useState(false);
+
+  // Add these new states after other state declarations
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const [currentRoll, setCurrentRoll] = useState<GachaResult | null>(null);
+
+  // Add these new states after other state declarations
+  const [isFlipping, setIsFlipping] = useState(false);
+  const [showCard, setShowCard] = useState(false);
+
+  // Add these new states after other state declarations
+  const [cardRotations, setCardRotations] = useState(0);
+  const [showLoadingEffects, setShowLoadingEffects] = useState(false);
 
   // Monitor wallet connection status
   useEffect(() => {
@@ -170,6 +196,7 @@ export default function Home() {
                 referrals: []
               },
               referrer: null, // Add referrer field with null default
+              gachaTries: 0, // Initialize gacha tries
               createdAt: new Date().toISOString(),
               lastUpdated: new Date().toISOString()
             });
@@ -186,7 +213,8 @@ export default function Home() {
           await Promise.all([
             fetchReferralStats(),
             fetchFeedersBalance(),
-            fetchLeaderboard()
+            fetchLeaderboard(),
+            fetchGachaData()
           ]);
         } else {
           setWalletAddress(null);
@@ -209,6 +237,7 @@ export default function Home() {
         setUserReferralCode(wallet.account.address.slice(0, 8));
         await fetchBalances(wallet.account.address);
         await fetchLeaderboard();
+        await fetchGachaData();
       } else {
         setWalletAddress(null);
         setUserReferralCode("");
@@ -223,6 +252,7 @@ export default function Home() {
     if (connected && walletAddress) {
       fetchBalances(walletAddress);
       fetchLeaderboard();
+      fetchGachaData();
     }
   }, [connected, walletAddress]);
 
@@ -258,7 +288,8 @@ export default function Home() {
       Promise.all([
         fetchReferralStats(),
         fetchFeedersBalance(),
-        fetchLeaderboard()
+        fetchLeaderboard(),
+        fetchGachaData()
       ]);
     }
   }, [connected, walletAddress, userReferralCode]);
@@ -371,6 +402,7 @@ export default function Home() {
           eligibleInvites: { total: 0, referrals: [] },
           validInvites: { total: 0, referrals: [] },
           invalidInvites: { total: 0, referrals: [] },
+          gachaTries: 0,             // Initialize gacha tries
           createdAt: new Date().toISOString(),
           lastUpdated: new Date().toISOString()
         };
@@ -552,6 +584,106 @@ export default function Home() {
     }
   };
 
+  // Add this function to fetch gacha data
+  const fetchGachaData = async () => {
+    if (!connected || !userReferralCode) return;
+    
+    try {
+      const playerDoc = doc(db, 'players', userReferralCode);
+      const playerSnap = await getDoc(playerDoc);
+      
+      if (playerSnap.exists()) {
+        const data = playerSnap.data();
+        setGachaTries(data.gachaTries || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching gacha data:", error);
+    }
+  };
+
+  // Update the handleGachaRoll function
+  const handleGachaRoll = async () => {
+    if (!connected || !userReferralCode || gachaTries < 1) return;
+    
+    setIsRolling(true);
+    setShowCard(true);
+    setIsFlipping(false);
+    setShowLoadingEffects(true);
+    
+    try {
+      // Calculate rarity immediately but don't show result
+      const rand = Math.random() * 100;
+      let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
+      
+      if (rand < 95) rarity = 'tryAgain';
+      else if (rand < 99.99) rarity = 'common';
+      else if (rand < 99.99035) rarity = 'uncommon';
+      else if (rand < 99.99045) rarity = 'rare';
+      else rarity = 'epic';
+
+      const result: GachaResult = {
+        id: `${userReferralCode}_${Date.now()}`,
+        rarity,
+        timestamp: new Date().toISOString()
+      };
+
+      setCurrentRoll(result);
+
+      // Add exciting animations before reveal
+      let rotations = 0;
+      const rotationInterval = setInterval(() => {
+        rotations += 1;
+        setCardRotations(rotations);
+      }, 300);
+
+      // Wait for 3 seconds with animations
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      clearInterval(rotationInterval);
+      setShowLoadingEffects(false);
+
+      // Show the final card flip
+      setIsFlipping(true);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const playerDoc = doc(db, 'players', userReferralCode);
+      await runTransaction(db, async (transaction) => {
+        const playerSnap = await transaction.get(playerDoc);
+        if (!playerSnap.exists()) throw new Error("Player document not found");
+
+        const currentData = playerSnap.data();
+        
+        transaction.update(playerDoc, {
+          gachaTries: (currentData.gachaTries || 0) - 1,
+          lastUpdated: new Date().toISOString()
+        });
+
+        setGachaTries(prev => prev - 1);
+      });
+
+      // Keep showing the result for a moment
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      setShowCard(false);
+
+      showToast({
+        message: rarity === 'tryAgain' 
+          ? "Try Again! But you still used your try!" 
+          : `Congratulations! You got a ${rarity} seed NFT!`,
+        type: rarity === 'tryAgain' ? "info" : "success"
+      });
+    } catch (error) {
+      console.error("Error rolling gacha:", error);
+      setShowCard(false);
+      setShowLoadingEffects(false);
+      showToast({
+        message: "Failed to roll gacha. Please try again.",
+        type: "error"
+      });
+    } finally {
+      setCardRotations(0);
+      setIsRolling(false);
+    }
+  };
+
   // Update the existing handleBuy function to track purchases
   const handleBuy = async () => {
     if (!connected || !walletAddress || !userReferralCode) return;
@@ -562,6 +694,9 @@ export default function Home() {
       if (!purchaseAmount || purchaseAmount <= 0) throw new Error("Invalid amount");
       
       const spiderAmount = purchaseAmount / 0.02;
+
+      // Calculate gacha tries (1 try per 5 TON)
+      const gachaTries = Math.floor(purchaseAmount / 0.1);
   
       // Process blockchain transaction first
       await tonConnectUI.sendTransaction({
@@ -588,6 +723,7 @@ export default function Home() {
         validInvites: { total: 0, referrals: [] },
         eligibleInvites: { total: 0, referrals: [] },
         invalidInvites: { total: 0, referrals: [] },
+        gachaTries: 0,
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString()
       };
@@ -597,6 +733,7 @@ export default function Home() {
       batch.set(playerDoc, {
         ...currentData,
         spiderBalance: newSpiderBalance,
+        gachaTries: increment(gachaTries),
         lastUpdated: new Date().toISOString()
       }, { merge: true });
   
@@ -673,10 +810,20 @@ export default function Home() {
         fetchReferralStats(),
         savedReferrer && updateReferrerStats(savedReferrer),
         fetchLeaderboard(),
-        fetchBalances()
+        fetchBalances(),
+        fetchGachaData()
       ]);
   
       setAmount("");
+      setGachaTries(prev => prev + gachaTries);
+      
+      if (gachaTries > 0) {
+        showToast({
+          message: `You received ${gachaTries} gacha ${gachaTries === 1 ? 'try' : 'tries'}!`,
+          type: "success"
+        });
+      }
+  
       showToast({ message: "Purchase successful!", type: "success" });
   
     } catch (error: any) {
@@ -912,7 +1059,8 @@ export default function Home() {
       await Promise.all([
         fetchBalances(),
         fetchLeaderboard(),
-        fetchReferralStats()
+        fetchReferralStats(),
+        fetchGachaData()
       ]);
   
       setAmount("");
@@ -1080,10 +1228,11 @@ export default function Home() {
         </div>
 
         <Tabs defaultValue="buy" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3 bg-white/10">
+          <TabsList className="grid w-full grid-cols-4 bg-white/10">
             <TabsTrigger value="buy">Buy Tokens</TabsTrigger>
             <TabsTrigger value="referral">Referral</TabsTrigger>
             <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
+            <TabsTrigger value="gacha">Gacha</TabsTrigger>
           </TabsList>
 
           <TabsContent value="buy">
@@ -1471,6 +1620,149 @@ export default function Home() {
                     )}
                     Refresh Leaderboard
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="gacha">
+            <Card className="bg-white/10 backdrop-blur-lg border-none text-white">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-center gap-2">
+                  <Spider className="h-6 w-6" />
+                  <span>Seed NFT Gacha</span>
+                  <InfoPopup />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="text-center space-y-2">
+                  <h3 className="text-xl">Your Gacha Tries: {gachaTries}</h3>
+                  <p className="text-sm opacity-80">Get 1 try for every 5 TON spent on tokens!</p>
+                </div>
+
+                <div className="relative min-h-[300px] flex items-center justify-center">
+                  <AnimatePresence>
+                    {showCard && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8, rotateY: 0 }}
+                        animate={{
+                          opacity: 1,
+                          scale: showLoadingEffects ? [1, 1.1, 1] : 1,
+                          rotateY: isFlipping ? 180 : cardRotations * 360,
+                          y: showLoadingEffects ? [0, -10, 0] : 0
+                        }}
+                        exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.5 } }}
+                        transition={{
+                          duration: showLoadingEffects ? 0.3 : 0.8,
+                          ease: "easeInOut",
+                          scale: {
+                            repeat: showLoadingEffects ? Infinity : 0,
+                            duration: 1
+                          },
+                          y: {
+                            repeat: showLoadingEffects ? Infinity : 0,
+                            duration: 1
+                          }
+                        }}
+                        style={{
+                          width: "200px",
+                          height: "300px",
+                          position: "relative",
+                          transformStyle: "preserve-3d"
+                        }}
+                      >
+                        {/* Card Front */}
+                        <motion.div
+                          className="absolute inset-0 backface-hidden bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl shadow-xl flex items-center justify-center overflow-hidden"
+                          style={{ rotateY: 0 }}
+                        >
+                          <motion.div
+                            animate={{
+                              rotate: showLoadingEffects ? 360 : 0,
+                              scale: showLoadingEffects ? [1, 1.2, 1] : 1
+                            }}
+                            transition={{
+                              rotate: { duration: 2, repeat: Infinity, ease: "linear" },
+                              scale: { duration: 1, repeat: Infinity }
+                            }}
+                          >
+                            <Spider className="w-20 h-20 text-white" />
+                          </motion.div>
+                          {showLoadingEffects && (
+                            <motion.div
+                              className="absolute inset-0 bg-white/10"
+                              animate={{
+                                background: [
+                                  "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 0%, transparent 50%)",
+                                  "radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2) 100%, transparent 100%)",
+                                ],
+                              }}
+                              transition={{
+                                duration: 1,
+                                repeat: Infinity,
+                                ease: "easeInOut"
+                              }}
+                            />
+                          )}
+                        </motion.div>
+
+                        {/* Card Back */}
+                        <motion.div
+                          className={`absolute inset-0 backface-hidden rounded-xl shadow-xl flex flex-col items-center justify-center p-4 ${
+                            currentRoll?.rarity === 'tryAgain' ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' :
+                            currentRoll?.rarity === 'common' ? 'bg-gradient-to-br from-gray-400 to-gray-600' :
+                            currentRoll?.rarity === 'uncommon' ? 'bg-gradient-to-br from-green-400 to-green-600' :
+                            currentRoll?.rarity === 'rare' ? 'bg-gradient-to-br from-blue-400 to-blue-600' :
+                            'bg-gradient-to-br from-purple-400 to-purple-600'
+                          }`}
+                          style={{ rotateY: 180 }}
+                        >
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0 }}
+                            animate={isFlipping ? { opacity: 1, scale: 1 } : {}}
+                            transition={{ delay: 0.4 }}
+                            className="text-center"
+                          >
+                            <Spider className="w-16 h-16 mx-auto mb-4 text-white" />
+                            <h3 className="text-xl font-bold text-white mb-2">
+                              {currentRoll?.rarity === 'tryAgain' ? 'Try Again!' : 
+                              `${currentRoll?.rarity.charAt(0).toUpperCase()}${currentRoll?.rarity.slice(1)} Seed`}
+                            </h3>
+                            <div className="absolute inset-0 pointer-events-none">
+                              <div className="absolute inset-0 bg-white opacity-10 animate-pulse" />
+                              {currentRoll?.rarity === 'epic' && (
+                                <>
+                                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 animate-pulse" />
+                                  <div className="absolute inset-0 animate-spin-slow" style={{
+                                    background: 'radial-gradient(circle at center, transparent 60%, purple 100%)',
+                                    mixBlendMode: 'overlay'
+                                  }} />
+                                </>
+                              )}
+                            </div>
+                          </motion.div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Roll Button - only show when not rolling */}
+                  {!showCard && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute bottom-0 w-full"
+                    >
+                      <Button
+                        onClick={handleGachaRoll}
+                        className="w-full bg-gradient-to-r from-[#3c28a7] to-[#9f2dfd] hover:from-[#3c28a7]/80 hover:to-[#9f2dfd]/80"
+                        disabled={gachaTries < 1 || isRolling || !connected}
+                      >
+                        Roll Gacha
+                      </Button>
+                    </motion.div>
+                  )}
                 </div>
               </CardContent>
             </Card>
