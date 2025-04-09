@@ -83,6 +83,10 @@ interface PlayerData {
   referrer?: string; // Add referrer field
   suiWalletAddress?: string;
   gachaTries: number;
+  gachaWins?: {
+    rarity: 'common' | 'uncommon' | 'rare' | 'epic';
+    timestamp: string;
+  }[];
 }
 
 interface GachaResult {
@@ -157,6 +161,9 @@ export default function Home() {
   const [cardRotations, setCardRotations] = useState(0);
   const [showLoadingEffects, setShowLoadingEffects] = useState(false);
 
+  // Add new state for wins
+  const [gachaWins, setGachaWins] = useState<PlayerData['gachaWins']>([]);
+
   // Monitor wallet connection status
   useEffect(() => {
     const checkConnection = async () => {
@@ -197,6 +204,7 @@ export default function Home() {
               },
               referrer: null, // Add referrer field with null default
               gachaTries: 0, // Initialize gacha tries
+              gachaWins: [], // Initialize gacha wins
               createdAt: new Date().toISOString(),
               lastUpdated: new Date().toISOString()
             });
@@ -403,6 +411,7 @@ export default function Home() {
           validInvites: { total: 0, referrals: [] },
           invalidInvites: { total: 0, referrals: [] },
           gachaTries: 0,             // Initialize gacha tries
+          gachaWins: [],             // Initialize gacha wins
           createdAt: new Date().toISOString(),
           lastUpdated: new Date().toISOString()
         };
@@ -584,23 +593,6 @@ export default function Home() {
     }
   };
 
-  // Add this function to fetch gacha data
-  const fetchGachaData = async () => {
-    if (!connected || !userReferralCode) return;
-    
-    try {
-      const playerDoc = doc(db, 'players', userReferralCode);
-      const playerSnap = await getDoc(playerDoc);
-      
-      if (playerSnap.exists()) {
-        const data = playerSnap.data();
-        setGachaTries(data.gachaTries || 0);
-      }
-    } catch (error) {
-      console.error("Error fetching gacha data:", error);
-    }
-  };
-
   // Update the handleGachaRoll function
   const handleGachaRoll = async () => {
     if (!connected || !userReferralCode || gachaTries < 1) return;
@@ -615,8 +607,8 @@ export default function Home() {
       const rand = Math.random() * 100;
       let rarity: 'tryAgain' | 'common' | 'uncommon' | 'rare' | 'epic';
       
-      if (rand < 95) rarity = 'tryAgain';
-      else if (rand < 99.99) rarity = 'common';
+      if (rand < 90) rarity = 'tryAgain';
+      else if (rand < 94.99) rarity = 'common';
       else if (rand < 99.99035) rarity = 'uncommon';
       else if (rand < 99.99045) rarity = 'rare';
       else rarity = 'epic';
@@ -628,6 +620,45 @@ export default function Home() {
       };
 
       setCurrentRoll(result);
+
+      // If it's a win (not tryAgain), record it
+      if (rarity !== 'tryAgain') {
+        const playerDoc = doc(db, 'players', userReferralCode);
+        await runTransaction(db, async (transaction) => {
+          const playerSnap = await transaction.get(playerDoc);
+          if (!playerSnap.exists()) throw new Error("Player document not found");
+
+          const currentData = playerSnap.data();
+          const currentWins = currentData.gachaWins || [];
+          
+          transaction.update(playerDoc, {
+            gachaTries: (currentData.gachaTries || 0) - 1,
+            gachaWins: [...currentWins, {
+              rarity: rarity,
+              timestamp: new Date().toISOString()
+            }],
+            lastUpdated: new Date().toISOString()
+          });
+
+          setGachaTries(prev => prev - 1);
+        });
+      } else {
+        // Handle tryAgain case - just deduct try
+        const playerDoc = doc(db, 'players', userReferralCode);
+        await runTransaction(db, async (transaction) => {
+          const playerSnap = await transaction.get(playerDoc);
+          if (!playerSnap.exists()) throw new Error("Player document not found");
+
+          const currentData = playerSnap.data();
+          
+          transaction.update(playerDoc, {
+            gachaTries: (currentData.gachaTries || 0) - 1,
+            lastUpdated: new Date().toISOString()
+          });
+
+          setGachaTries(prev => prev - 1);
+        });
+      }
 
       // Add exciting animations before reveal
       let rotations = 0;
@@ -645,31 +676,22 @@ export default function Home() {
       setIsFlipping(true);
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      const playerDoc = doc(db, 'players', userReferralCode);
-      await runTransaction(db, async (transaction) => {
-        const playerSnap = await transaction.get(playerDoc);
-        if (!playerSnap.exists()) throw new Error("Player document not found");
-
-        const currentData = playerSnap.data();
-        
-        transaction.update(playerDoc, {
-          gachaTries: (currentData.gachaTries || 0) - 1,
-          lastUpdated: new Date().toISOString()
-        });
-
-        setGachaTries(prev => prev - 1);
-      });
-
       // Keep showing the result for a moment
       await new Promise(resolve => setTimeout(resolve, 2000));
       setShowCard(false);
 
-      showToast({
-        message: rarity === 'tryAgain' 
-          ? "Try Again! But you still used your try!" 
-          : `Congratulations! You got a ${rarity} seed NFT!`,
-        type: rarity === 'tryAgain' ? "info" : "success"
-      });
+      // Now show the toast after animations complete
+      if (rarity !== 'tryAgain') {
+        showToast({
+          message: `Congratulations! You won a ${rarity} seed NFT!`,
+          type: "success"
+        });
+      } else {
+        showToast({
+          message: "Try Again! But you still used your try!",
+          type: "info"
+        });
+      }
     } catch (error) {
       console.error("Error rolling gacha:", error);
       setShowCard(false);
@@ -681,6 +703,24 @@ export default function Home() {
     } finally {
       setCardRotations(0);
       setIsRolling(false);
+    }
+  };
+
+  // Add this function to fetch gacha data
+  const fetchGachaData = async () => {
+    if (!connected || !userReferralCode) return;
+    
+    try {
+      const playerDoc = doc(db, 'players', userReferralCode);
+      const playerSnap = await getDoc(playerDoc);
+      
+      if (playerSnap.exists()) {
+        const data = playerSnap.data();
+        setGachaTries(data.gachaTries || 0);
+        setGachaWins(data.gachaWins || []);
+      }
+    } catch (error) {
+      console.error("Error fetching gacha data:", error);
     }
   };
 
@@ -724,6 +764,7 @@ export default function Home() {
         eligibleInvites: { total: 0, referrals: [] },
         invalidInvites: { total: 0, referrals: [] },
         gachaTries: 0,
+        gachaWins: [],
         createdAt: new Date().toISOString(),
         lastUpdated: new Date().toISOString()
       };
@@ -1762,6 +1803,23 @@ export default function Home() {
                         Roll Gacha
                       </Button>
                     </motion.div>
+                  )}
+                </div>
+
+                {/* Display Gacha Wins */}
+                <div className="mt-6 space-y-4">
+                  <h3 className="text-xl font-semibold">Your Wins</h3>
+                  {(gachaWins || []).length > 0 ? (
+                    <div className="space-y-2">
+                      {(gachaWins || []).map((win, index) => (
+                        <div key={index} className="bg-white/10 p-3 rounded-lg flex justify-between items-center">
+                          <span className="font-medium">{win.rarity.charAt(0).toUpperCase() + win.rarity.slice(1)} Seed</span>
+                          <span className="text-sm opacity-80">{new Date(win.timestamp).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm opacity-80">No wins recorded yet. Try your luck!</p>
                   )}
                 </div>
               </CardContent>
