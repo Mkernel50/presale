@@ -744,7 +744,7 @@ export default function Home() {
       const spiderAmount = purchaseAmount / 0.02;
 
       // Calculate gacha tries (1 try per 5 TON)
-      const gachaTries = Math.floor(purchaseAmount / 0.1);
+      const gachaTries = Math.floor(purchaseAmount / 5); // Changed from 0.1 to 5
   
       // Process blockchain transaction first
       await tonConnectUI.sendTransaction({
