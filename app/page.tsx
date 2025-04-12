@@ -88,8 +88,8 @@ interface PlayerData {
     timestamp: string;
   }[];
   pityCounter?: {
-    rare: number;   // Guaranteed rare after 90 rolls (was 50)
-    epic: number;  // Guaranteed epic after 250 rolls (was 100)
+    rare: number;   // Guaranteed rare after 50 rolls (was 90)
+    epic: number;  // Guaranteed epic after 100 rolls (was 250)
   };
 }
 
@@ -630,11 +630,11 @@ export default function Home() {
         };
 
         // Check pity system first
-        if (newPityCounter.epic >= 250) {  // Changed from 100 to 250
+        if (newPityCounter.epic >= 100) {  // Changed from 250 to 100
           rarity = 'epic';
           newPityCounter.epic = 0;
           newPityCounter.rare = 0;
-        } else if (newPityCounter.rare >= 90) {  // Changed from 50 to 90
+        } else if (newPityCounter.rare >= 50) {  // Changed from 90 to 50
           rarity = 'rare';
           newPityCounter.rare = 0;
         } else {
@@ -1717,12 +1717,12 @@ export default function Home() {
                     <div className="mt-2 flex justify-center gap-4">
                       <div className="bg-white/10 px-4 py-2 rounded-lg">
                         <p className="text-sm text-blue-400">Rare Pity</p>
-                        <p className="font-bold">{90 - (playerData.pityCounter.rare || 0)}</p>
+                        <p className="font-bold">{50 - (playerData.pityCounter.rare || 0)}</p>
                         <p className="text-xs opacity-60">rolls until guaranteed</p>
                       </div>
                       <div className="bg-white/10 px-4 py-2 rounded-lg">
                         <p className="text-sm text-purple-400">Epic Pity</p>
-                        <p className="font-bold">{250 - (playerData.pityCounter.epic || 0)}</p>
+                        <p className="font-bold">{100 - (playerData.pityCounter.epic || 0)}</p>
                         <p className="text-xs opacity-60">rolls until guaranteed</p>
                       </div>
                     </div>
